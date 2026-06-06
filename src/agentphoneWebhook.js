@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { config } from "./config.js";
 import { decideTurn, draftReply } from "./openai.js";
 import { sendReply } from "./agentmail.js";
-import { getCallContext } from "./store.js";
+import { getCallContext, claimReplySend, releaseReplySend } from "./store.js";
 
 /**
  * Handles AgentPhone `agent.message` (voice) webhook events. AgentPhone sends us
@@ -36,8 +36,17 @@ export async function handleAgentPhoneWebhook(req, res) {
   const transcript = data.transcript || "";
   const history = evt.recentHistory || [];
 
-  // Find the email context we stored when we created this call.
-  const ctx = (callId && getCallContext(callId)) || lastContextFallback();
+  // Find the email context we stored when we created this call. Track the
+  // effective callId so the one-shot send guard keys off the right entry.
+  let effectiveCallId = callId;
+  let ctx = callId && getCallContext(callId);
+  if (!ctx) {
+    const fb = lastContextFallback();
+    if (fb) {
+      effectiveCallId = fb.callId;
+      ctx = getCallContext(fb.callId);
+    }
+  }
   if (!ctx) {
     return res.json({ text: "Sorry, I lost the context for this call. Goodbye.", hangup: true });
   }
@@ -51,9 +60,18 @@ export async function handleAgentPhoneWebhook(req, res) {
     });
 
     if (decision.readyToSend && decision.instructions) {
-      const draft = await draftReply(ctx.email, decision.instructions, ctx.user);
-      await sendReply(ctx.email, draft);
-      console.log(`[reply] (agentphone) sent to ${ctx.email.from} | subject: ${draft.subject}`);
+      // One-shot guard: only the first turn that crosses the threshold sends.
+      if (!claimReplySend(effectiveCallId)) {
+        return res.json({ text: "I've already sent that reply. Anything else?", hangup: false });
+      }
+      try {
+        const draft = await draftReply(ctx.email, decision.instructions, ctx.user);
+        await sendReply(ctx.email, draft);
+        console.log(`[reply] (agentphone) sent to ${ctx.email.from} | subject: ${draft.subject}`);
+      } catch (sendErr) {
+        releaseReplySend(effectiveCallId); // allow a retry on failure
+        throw sendErr;
+      }
       return res.json({
         text: `${decision.say} Done — I've sent the reply. Goodbye.`,
         hangup: true,

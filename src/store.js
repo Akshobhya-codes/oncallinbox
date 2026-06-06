@@ -20,3 +20,19 @@ export function deleteCallContext(callId) {
 export function allContexts() {
   return [...callContexts.entries()].map(([callId, ctx]) => ({ callId, ...ctx }));
 }
+
+// One-shot send guard: atomically claim the right to send a reply for this call.
+// Returns true exactly once per call (the first claimer); false thereafter, so
+// overlapping confirmation turns can't double-send.
+export function claimReplySend(callId) {
+  const ctx = callContexts.get(callId);
+  if (!ctx || ctx.replySent) return false;
+  ctx.replySent = true;
+  return true;
+}
+
+// Release the claim if the send failed, so the user can retry.
+export function releaseReplySend(callId) {
+  const ctx = callContexts.get(callId);
+  if (ctx) ctx.replySent = false;
+}

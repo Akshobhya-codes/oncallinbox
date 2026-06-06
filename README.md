@@ -1,4 +1,10 @@
-# OncallInbox — Voice & Reply Backbone
+# OncallInbox
+
+OncallInbox is an AI on-call agent for your inbox. It monitors email, detects urgent messages, calls you when something needs attention, summarizes the issue, and turns your spoken instructions into a draft reply for approval. Stop checking email; let urgent messages call you.
+
+---
+
+## Voice & Reply Backbone
 
 This is the **calling + voice + reply-sending** half of OncallInbox (steps 4→7 of the flow).
 Your cofounder owns Gmail/email ingestion and urgency classification. When they decide an
@@ -87,3 +93,8 @@ x-api-key: <INTERNAL_API_KEY>   # only if you set one
 
 The call goes to `USER_PHONE`. `messageId` is what lets AgentMail thread the reply
 correctly; if omitted we send a fresh email to `from`.
+
+> **Note:** the active caller is **AgentPhone** (`src/agentphone.js`) — purpose-built
+> for AI agents dialing real numbers. The Vapi implementation is retained in
+> `src/vapi.js` for reference. Run `node scripts/setup-agentphone.js` once to create
+> the agent + register the webhook, then `POST /api/trigger-call`.
